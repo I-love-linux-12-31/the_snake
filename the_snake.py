@@ -109,8 +109,10 @@ class BadApple(Apple):
         else:
             self.position = (-GRID_SIZE * 2, -GRID_SIZE)
 
+
 class Rock(Apple):
     """Класс камня"""
+
     def __init__(self, position: [(int, int)] = None, color=ROCK_COLOR):
         super().__init__(position, color)
 
@@ -220,6 +222,34 @@ def handle_keys(game_object):
                 game_object.next_direction = RIGHT
 
 
+def process_snake_collisions(gameobjects: [GameObject, ]):
+    """Функция обработки столкновений змеи."""
+    snake, apple, bad_apple, *rocks = gameobjects
+
+    if apple.position in snake.positions:
+        snake.length += 1
+        snake.positions.append((-1 * GRID_SIZE, -1 * GRID_SIZE))
+        apple.randomize_position()
+        bad_apple.randomize_position()
+    if bad_apple.position in snake.positions:
+        if len(snake.positions) > 1:
+            snake.length -= 1
+            snake.positions.pop()
+        else:
+            snake.reset()
+        bad_apple.randomize_position()
+        apple.randomize_position()
+    if snake.get_head_position() in snake.positions[1:]:
+        snake.reset()
+    if snake.get_head_position() in [
+        rock.position for rock in rocks
+    ]:
+        snake.reset()
+        for _obj in gameobjects:
+            if not isinstance(_obj, Snake):
+                _obj.randomize_position()
+
+
 def main():
     """Основная функция программы."""
     snake = Snake()
@@ -231,33 +261,13 @@ def main():
         if not any(rock.position == i.position for i in gameobjects):
             gameobjects.append(rock)
 
-
     while True:
         clock.tick(SPEED)
         screen.fill(BOARD_BACKGROUND_COLOR)
         handle_keys(snake)
         snake.move()
-        if apple.position in snake.positions:
-            snake.length += 1
-            snake.positions.append((-1 * GRID_SIZE, -1 * GRID_SIZE))
-            apple.randomize_position()
-            bad_apple.randomize_position()
-        if bad_apple.position in snake.positions:
-            if len(snake.positions) > 1:
-                snake.length -= 1
-                snake.positions.pop()
 
-            else:
-                snake.reset()
-            bad_apple.randomize_position()
-            apple.randomize_position()
-        if snake.get_head_position() in snake.positions[1:]:
-            snake.reset()
-        if snake.get_head_position() in [rock.position for rock in gameobjects if isinstance(rock, Rock)]:
-            snake.reset()
-            for obj in gameobjects:
-                if not isinstance(obj, Snake):
-                    obj.randomize_position()
+        process_snake_collisions(gameobjects)
 
         for obj in gameobjects:
             obj.draw()
