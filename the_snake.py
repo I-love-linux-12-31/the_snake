@@ -1,8 +1,6 @@
 from random import randint
 import os
 import pygame
-from pygame.examples.midi import BACKGROUNDCOLOR
-from pygame.examples.moveit import WIDTH, HEIGHT
 
 # from tests.conftest import apple
 
@@ -21,13 +19,15 @@ LEFT = (-1, 0)
 RIGHT = (1, 0)
 
 # Цвет фона - черный:
-BOARD_BACKGROUND_COLOR = (0, 0, 0)
+BOARD_BACKGROUND_COLOR = (205, 210, 191)
 
 # Цвет границы ячейки
 BORDER_COLOR = (93, 216, 228)
 
 # Цвет яблока
 APPLE_COLOR = (255, 0, 0)
+BAD_APPLE_COLOR = (170, 139, 99)
+ROCK_COLOR = (193, 186, 176)
 
 # Цвет змейки
 SNAKE_COLOR = (0, 255, 0)
@@ -93,6 +93,34 @@ class Apple(GameObject):
         pygame.draw.rect(screen, BORDER_COLOR, rect, 1)
 
 
+class BadApple(Apple):
+    """Класс испорченного яблока"""
+
+    def __init__(self, position: [(int, int)] = None, color=BAD_APPLE_COLOR):
+        super().__init__(position, color)
+
+    def randomize_position(self):
+        """Метод для изменения позиции на случайную.
+        С вероятностью 90% испорченное яблоко не появится.
+        """
+        r = randint(0, 32)
+        if r % 10 == 0:
+            super().randomize_position()
+        else:
+            self.position = (-GRID_SIZE * 2, -GRID_SIZE)
+
+class Rock(Apple):
+    """Класс камня"""
+    def __init__(self, position: [(int, int)] = None, color=ROCK_COLOR):
+        super().__init__(position, color)
+
+    def draw(self):
+        """Метод для отрисовки."""
+        rect = pygame.Rect(self.position, (GRID_SIZE, GRID_SIZE))
+        pygame.draw.rect(screen, self.body_color, rect)
+        pygame.draw.rect(screen, BAD_APPLE_COLOR, rect, 1)
+
+
 class Snake(GameObject):
     """Класс змеи"""
 
@@ -129,14 +157,14 @@ class Snake(GameObject):
         dx, dy = self.direction
         x, y = self.get_head_position()
         nx, ny = x + dx * GRID_SIZE, y + dy * GRID_SIZE
-        if nx > WIDTH:
+        if nx >= SCREEN_WIDTH:
             nx = 0
         if nx < 0:
-            nx = WIDTH - GRID_SIZE
-        if ny > HEIGHT:
+            nx = SCREEN_WIDTH - GRID_SIZE
+        if ny >= SCREEN_HEIGHT:
             ny = 0
         if ny < 0:
-            ny = HEIGHT - GRID_SIZE
+            ny = SCREEN_HEIGHT - GRID_SIZE
 
         self.positions.insert(0, (nx, ny))
         self.last = self.positions.pop()
@@ -196,20 +224,43 @@ def main():
     """Основная функция программы."""
     snake = Snake()
     apple = Apple()
+    bad_apple = BadApple()
+    gameobjects = [snake, apple, bad_apple]
+    for i in range(randint(2, 7)):
+        rock = Rock()
+        if not any(rock.position == i.position for i in gameobjects):
+            gameobjects.append(rock)
+
 
     while True:
         clock.tick(SPEED)
-        screen.fill(BACKGROUNDCOLOR)
+        screen.fill(BOARD_BACKGROUND_COLOR)
         handle_keys(snake)
         snake.move()
         if apple.position in snake.positions:
             snake.length += 1
             snake.positions.append((-1 * GRID_SIZE, -1 * GRID_SIZE))
             apple.randomize_position()
+            bad_apple.randomize_position()
+        if bad_apple.position in snake.positions:
+            if len(snake.positions) > 1:
+                snake.length -= 1
+                snake.positions.pop()
+
+            else:
+                snake.reset()
+            bad_apple.randomize_position()
+            apple.randomize_position()
         if snake.get_head_position() in snake.positions[1:]:
             snake.reset()
-        snake.draw()
-        apple.draw()
+        if snake.get_head_position() in [rock.position for rock in gameobjects if isinstance(rock, Rock)]:
+            snake.reset()
+            for obj in gameobjects:
+                if not isinstance(obj, Snake):
+                    obj.randomize_position()
+
+        for obj in gameobjects:
+            obj.draw()
         pygame.display.update()
 
 
