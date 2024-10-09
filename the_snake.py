@@ -1,16 +1,22 @@
-from random import randint
 import os
+from random import randint
 import pygame
 
 # from tests.conftest import apple
 
 os.environ['PYGAME_DETECT_AVX2'] = '1'
+DEBUG = os.environ.get("DEBUG", False)
 # Константы для размеров поля и сетки:
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 640, 480
 GRID_SIZE = 20
 GRID_WIDTH = SCREEN_WIDTH // GRID_SIZE
 GRID_HEIGHT = SCREEN_HEIGHT // GRID_SIZE
+
+CENTER = (
+    GRID_SIZE * (GRID_WIDTH // 2),
+    GRID_SIZE * (GRID_HEIGHT // 2)
+)
 
 # Направления движения:
 UP = (0, -1)
@@ -32,8 +38,13 @@ ROCK_COLOR = (193, 186, 176)
 # Цвет змейки
 SNAKE_COLOR = (0, 255, 0)
 
+ALL_CELLS = set(
+    (x, y) for x in range(0, SCREEN_WIDTH, GRID_SIZE)
+    for y in range(0, SCREEN_HEIGHT, GRID_SIZE)
+)
+
 # Скорость движения змейки:
-SPEED = 5
+speed = 5
 
 pygame.init()
 # Настройка игрового окна:
@@ -48,6 +59,20 @@ pygame.display.set_caption('Змейка')
 
 # Настройка времени:
 clock = pygame.time.Clock()
+
+can_run = True
+
+
+def save_max_score(score):
+    """Сохранение лучшего счёта."""
+    with open('max_score.txt', 'wt') as f:
+        f.write(str(score))
+
+
+def load_max_score():
+    """Загрузка лучшего счёта."""
+    with open('max_score.txt', 'rt') as f:
+        return int(f.read())
 
 
 class GameObject:
@@ -73,12 +98,15 @@ class GameObject:
 class Apple(GameObject):
     """Класс яблока"""
 
-    def randomize_position(self):
+    def randomize_position(self, snake: GameObject = None):
         """Метод для изменения позиции на случайную."""
         self.position = (
             randint(0, GRID_WIDTH - 1) * GRID_SIZE,
             randint(0, GRID_HEIGHT - 1) * GRID_SIZE
         )
+        if snake:
+            if self.position in snake.positions:
+                self.randomize_position(snake)
 
     def __init__(self, position: [(int, int)] = None, color=APPLE_COLOR):
         if position is None:
@@ -99,15 +127,15 @@ class BadApple(Apple):
     def __init__(self, position: [(int, int)] = None, color=BAD_APPLE_COLOR):
         super().__init__(position, color)
 
-    def randomize_position(self):
-        """Метод для изменения позиции на случайную.
-        С вероятностью 90% испорченное яблоко не появится.
-        """
-        r = randint(0, 32)
-        if r % 10 == 0:
-            super().randomize_position()
-        else:
-            self.position = (-GRID_SIZE * 2, -GRID_SIZE)
+    # def randomize_position(self, snake: GameObject = None):
+    #     """Метод для изменения позиции на случайную.
+    #     С вероятностью 90% испорченное яблоко не появится.
+    #     """
+    #     r = randint(0, 32)
+    #     if r % 10 == 0:
+    #         super().randomize_position(snake)
+    #     else:
+    #         self.position = (-GRID_SIZE * 2, -GRID_SIZE)
 
 
 class Rock(Apple):
@@ -134,10 +162,7 @@ class Snake(GameObject):
     last: tuple = None
 
     def __init__(self):
-        position = (
-            GRID_SIZE * (GRID_WIDTH // 2),
-            GRID_SIZE * (GRID_WIDTH // 2)
-        )
+        position = CENTER
         super().__init__(position, SNAKE_COLOR)
         self.positions = [position, ]
         self.last = (-1, -1)
@@ -156,28 +181,22 @@ class Snake(GameObject):
     def move(self):
         """Метод движения змеи."""
         self.update_direction()
-        dx, dy = self.direction
-        x, y = self.get_head_position()
-        nx, ny = x + dx * GRID_SIZE, y + dy * GRID_SIZE
-        if nx >= SCREEN_WIDTH:
-            nx = 0
-        if nx < 0:
-            nx = SCREEN_WIDTH - GRID_SIZE
-        if ny >= SCREEN_HEIGHT:
-            ny = 0
-        if ny < 0:
-            ny = SCREEN_HEIGHT - GRID_SIZE
-
+        nx, ny = (
+            (self.get_head_position()[0] + self.direction[0]
+             * GRID_SIZE) % SCREEN_WIDTH,
+            (self.get_head_position()[1] + self.direction[1]
+             * GRID_SIZE) % SCREEN_HEIGHT
+        )
         self.positions.insert(0, (nx, ny))
         self.last = self.positions.pop()
 
     # # Метод draw класса Snake
     def draw(self):
         """Метод для отрисовки."""
-        for position in self.positions:
-            rect = (pygame.Rect(position, (GRID_SIZE, GRID_SIZE)))
-            pygame.draw.rect(screen, self.body_color, rect)
-            pygame.draw.rect(screen, BORDER_COLOR, rect, 1)
+        # for position in self.positions:
+        #     rect = (pygame.Rect(position, (GRID_SIZE, GRID_SIZE)))
+        #     pygame.draw.rect(screen, self.body_color, rect)
+        #     pygame.draw.rect(screen, BORDER_COLOR, rect, 1)
 
         # Отрисовка головы змейки
         head_rect = pygame.Rect(self.positions[0], (GRID_SIZE, GRID_SIZE))
@@ -187,21 +206,54 @@ class Snake(GameObject):
             head_rect)
         pygame.draw.rect(screen, BORDER_COLOR, head_rect, 1)
 
-        # # Затирание последнего сегмента
-        # if self.last:
-        #     last_rect = pygame.Rect(self.last, (GRID_SIZE, GRID_SIZE))
-        #     pygame.draw.rect(screen, BOARD_BACKGROUND_COLOR, last_rect)
+        # Затирание последнего сегмента
+        # if self.positions[-1][0] < 0 and len(self.positions) > 1:
+        #     self.last = self.positions[-2]
+        if self.last:
+            last_rect = pygame.Rect(self.last, (GRID_SIZE, GRID_SIZE))
+            pygame.draw.rect(screen, BOARD_BACKGROUND_COLOR, last_rect)
 
     def reset(self):
         """Метод для сброса змеи в исходное состояние."""
-        self.position = (
-            GRID_SIZE * (GRID_WIDTH // 2),
-            GRID_SIZE * (GRID_WIDTH // 2)
-        )
-        self.positions = [self.position, ]
+        self.position = CENTER
+        self.positions = [self.positions[-1], ]
         self.direction = RIGHT
         self.length = 1
         self.last = (-1, -1)
+
+    def add_segment(self):
+        """Метод увеличение змейки."""
+        self.length += 1
+        # self.last = self.positions[-1]
+        self.positions.append(self.last)
+
+    def remove_segment(self):
+        """Метод уменьшения змейки."""
+        if len(self.positions) > 1:
+            self.length -= 1
+            self.last = self.positions.pop()
+
+
+def handle_key(key, game_object: Snake):
+    """Функция обработки нажатий клавиш"""
+    global speed, can_run
+
+    if key == pygame.K_ESCAPE:
+        can_run = False
+    elif key == pygame.K_UP and game_object.direction != DOWN:
+        game_object.next_direction = UP
+    elif key == pygame.K_DOWN and game_object.direction != UP:
+        game_object.next_direction = DOWN
+    elif key == pygame.K_LEFT and game_object.direction != RIGHT:
+        game_object.next_direction = LEFT
+    elif key == pygame.K_RIGHT and game_object.direction != LEFT:
+        game_object.next_direction = RIGHT
+    elif key == pygame.K_KP_PLUS and DEBUG:
+        game_object.add_segment()
+    elif key == pygame.K_q:
+        speed += 1
+    elif key == pygame.K_w and speed > 1:
+        speed -= 1
 
 
 # Функция обработки действий пользователя
@@ -212,66 +264,119 @@ def handle_keys(game_object):
             pygame.quit()
             raise SystemExit
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP and game_object.direction != DOWN:
-                game_object.next_direction = UP
-            elif event.key == pygame.K_DOWN and game_object.direction != UP:
-                game_object.next_direction = DOWN
-            elif event.key == pygame.K_LEFT and game_object.direction != RIGHT:
-                game_object.next_direction = LEFT
-            elif event.key == pygame.K_RIGHT and game_object.direction != LEFT:
-                game_object.next_direction = RIGHT
+            handle_key(event.key, game_object)
 
 
 def process_snake_collisions(gameobjects: [GameObject, ]):
     """Функция обработки столкновений змеи."""
-    snake, apple, bad_apple, *rocks = gameobjects
+    fruits, snake, *rocks = gameobjects
+    result = None
 
-    if apple.position in snake.positions:
-        snake.length += 1
-        snake.positions.append((-1 * GRID_SIZE, -1 * GRID_SIZE))
-        apple.randomize_position()
-        bad_apple.randomize_position()
-    if bad_apple.position in snake.positions:
-        if len(snake.positions) > 1:
-            snake.length -= 1
-            snake.positions.pop()
-        else:
-            snake.reset()
-        bad_apple.randomize_position()
-        apple.randomize_position()
-    if snake.get_head_position() in snake.positions[1:]:
+    for fruit in fruits:
+        if fruit.position == snake.positions[0]:
+            if isinstance(fruit, BadApple):
+                result = snake.last
+                snake.remove_segment()
+                fruits.remove(fruit)
+
+            else:
+                snake.add_segment()
+                fruits.remove(fruit)
+
+    if snake.get_head_position() in snake.positions[2:]:
         snake.reset()
+        result = "clear_background"
+
     if snake.get_head_position() in [
         rock.position for rock in rocks
     ]:
         snake.reset()
         for _obj in gameobjects:
-            if not isinstance(_obj, Snake):
-                _obj.randomize_position()
+            if isinstance(_obj, Rock):
+                _obj.randomize_position(snake)
+
+        result = "clear_background"
+    return result
+
+
+def update_fruits(fruits: [GameObject, ], snake: Snake):
+    """Функция обновления списка фруктов"""
+    if all((isinstance(i, BadApple) for i in fruits)) or not fruits:
+        old_fruits = fruits.copy()
+        fruits.clear()
+        good = randint(1, 3)
+        bad = randint(1, 3)
+        for i in range(good):
+            apple = Apple()
+            apple.randomize_position(snake)
+            fruits.append(apple)
+        for i in range(bad):
+            badapple = BadApple()
+            badapple.randomize_position(snake)
+            fruits.append(badapple)
+        # return lambda *args: screen.fill(BOARD_BACKGROUND_COLOR)
+
+        def res(*args):
+            for f in old_fruits:
+                pygame.draw.rect(
+                    screen,
+                    BOARD_BACKGROUND_COLOR,
+                    pygame.Rect(f.position, (GRID_SIZE, GRID_SIZE))
+                )
+            old_fruits.clear()
+        return res
+    return lambda *args: None
 
 
 def main():
     """Основная функция программы."""
+    if os.path.exists("max_score.txt"):
+        best_score = load_max_score()
+    else:
+        best_score = 1
+
+    screen.fill(BOARD_BACKGROUND_COLOR)
+
     snake = Snake()
-    apple = Apple()
-    bad_apple = BadApple()
-    gameobjects = [snake, apple, bad_apple]
+    fruits = []
+    # apple = Apple()
+    # bad_apple = BadApple()
+    gameobjects = [fruits, snake]
     for i in range(randint(2, 7)):
         rock = Rock()
-        if not any(rock.position == i.position for i in gameobjects):
+        if not any(rock.position == i for i in snake.positions):
             gameobjects.append(rock)
 
-    while True:
-        clock.tick(SPEED)
-        screen.fill(BOARD_BACKGROUND_COLOR)
+    while can_run:
+        clock.tick(speed)
+        # screen.fill(BOARD_BACKGROUND_COLOR)
         handle_keys(snake)
         snake.move()
+        res = process_snake_collisions(gameobjects)
+        if res == "clear_background":
+            screen.fill(BOARD_BACKGROUND_COLOR)
 
-        process_snake_collisions(gameobjects)
-
-        for obj in gameobjects:
+        for obj in gameobjects[1:] + gameobjects[0]:
             obj.draw()
+        snake.draw()
+
+        if isinstance(res, tuple):
+            pygame.draw.rect(
+                screen,
+                BOARD_BACKGROUND_COLOR,
+                pygame.Rect(res, (GRID_SIZE, GRID_SIZE))
+            )
+
         pygame.display.update()
+        if best_score < snake.length:
+            best_score = snake.length
+        pygame.display.set_caption(
+            f'Змейка | Лучший счёт: {best_score} | Скорость: {speed}'
+        )
+
+        update_fruits(fruits, snake)()
+        # print(fruits)
+    save_max_score(score=best_score)
 
 
 if __name__ == '__main__':
